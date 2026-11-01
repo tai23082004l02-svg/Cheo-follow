@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      1.1.0
+// @version      1.2.0
 // @description  Quét bình luận, tạo danh sách; chỉ Follow và Like khi người dùng nhấn từng mục.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
@@ -25,7 +25,7 @@ const css=document.createElement('style');
 css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
 (document.head||document.documentElement).append(css);
 const panel=document.createElement('div');panel.id='ccf-panel';
-panel.innerHTML='<b>Facebook Comment Follow v1.1</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
+panel.innerHTML='<b>Facebook Comment Follow v1.2</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
 const show=document.createElement('button');show.id='ccf-open';show.textContent='☰ Comment Follow';show.hidden=true;
 (document.body||document.documentElement).append(panel,show);
 const $=id=>panel.querySelector('#'+id);
@@ -61,20 +61,46 @@ function findComment(el){
 function collect(){
  let added=0;
  const root=dialogRoot();
- // Follow is often a plain <span> in Facebook comments, not a button.
- const candidates=[...root.querySelectorAll('span,a,button,[role="button"]')].filter(e=>e.children.length<3&&isVisible(e)&&isFollow(txt(e)));
- const used=new Set();
- for(const node of candidates){
-  const btn=clickableFollow(node);if(!btn||used.has(btn))continue;used.add(btn);
-  const comment=findComment(node);if(!comment)continue;
-  const name=comment.name;
-  const key=norm(name).toLowerCase()+'|'+(node.closest('a[href]')?.href||'');
+ // Search exact visible text nodes. Facebook often renders "Theo dõi" inside nested spans.
+ const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+ const nodes=[];
+ while(walker.nextNode()){
+  const t=walker.currentNode;
+  if(isFollow(t.textContent))nodes.push(t.parentElement);
+ }
+ for(const node of nodes){
+  if(!node||!isVisible(node)||node.closest('#ccf-panel'))continue;
+  // A follower link can be a span nested inside a clickable text wrapper.
+  const btn=node.closest('a,[role="button"],button')||node;
+  const rect=btn.getBoundingClientRect();
+  if(rect.width>170||rect.height>65)continue;
+  let parent=node;
+  let container=null, name='';
+  for(let i=0;i<7&&parent;i++,parent=parent.parentElement){
+   const t=txt(parent);
+   if(t.length>950)break;
+   const links=[...parent.querySelectorAll('a[href]')].filter(isVisible);
+   const named=links.map(a=>norm(a.innerText)).find(x=>x.length>1&&x.length<75&&!isFollow(x));
+   if(named && parent.getBoundingClientRect().height>35){container=parent;name=named;break;}
+  }
+  if(!container){
+   container=node.parentElement?.parentElement?.parentElement;
+   const raw=norm(container?.innerText||'').split(/Theo dõi|Follow/i)[0];
+   name=raw.split('·')[0].slice(0,70)||'Người bình luận';
+  }
+  if(!container)continue;
+  const key=name.toLowerCase();
   let item=S.found.get(key);
   if(!item){
-   item={id:++S.seq,key,name,follow:btn,like:comment.like,state:'ready'};
+   item={id:++S.seq,key,name,follow:btn,like:null,state:'ready'};
    S.found.set(key,item);added++;
-  }else{
-   item.follow=btn;item.like=comment.like;
+  }else item.follow=btn;
+  // Like is optional. Search within the nearest comment ancestor, not entire post.
+  let box=container;
+  for(let k=0;k<5&&box;k++,box=box.parentElement){
+   const actions=[...box.querySelectorAll('[role="button"],button,a,span')].filter(e=>isVisible(e)&&isLike(e.getAttribute('aria-label')||e.innerText||''));
+   if(actions.length===1){item.like=actions[0];break;}
+   if(txt(box).length>1200)break;
   }
   btn.classList.add('ccf-hit');
  }

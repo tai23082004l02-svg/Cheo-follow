@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker 24H
 // @namespace    cheo-follow.local
-// @version      2.2.0
+// @version      2.3.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và kiểm tra quá hạn 24 giờ.
 // @match        https://www.facebook.com/*
 // @match        https://web.facebook.com/*
@@ -14,12 +14,15 @@
 'use strict';
 if(window.__followChecker21)return;
 window.__followChecker21=true;
+console.info('[Follow Checker] script loaded v2.3');
 const KEY='cheo_follow_v21', DAY=86400000, nap=ms=>new Promise(r=>setTimeout(r,ms));
+const storeRead=(key,fallback)=>{try{return typeof GM_getValue==='function'?GM_getValue(key,fallback):localStorage.getItem(key)||fallback;}catch{return localStorage.getItem(key)||fallback;}};
+const storeWrite=(key,val)=>{try{if(typeof GM_setValue==='function')return GM_setValue(key,val);}catch(e){console.warn(e)}localStorage.setItem(key,val);};
 const state={running:false,stop:false};
 let db;
-try{db=JSON.parse(GM_getValue(KEY,'null'))||{};}catch{db={};}
+try{db=JSON.parse(storeRead(KEY,'null'))||{};}catch{db={};}
 db.following ||= {};db.followers ||= {};db.scans ||= {};
-const save=()=>GM_setValue(KEY,JSON.stringify(db));
+const save=()=>storeWrite(KEY,JSON.stringify(db));
 const safe=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const norm=s=>String(s||'').replace(/\s+/g,' ').trim();
 const blocked=new Set('friends groups pages watch reels stories marketplace events notifications messages settings privacy help search home login photo photos videos posts share profile'.split(' '));
@@ -116,13 +119,13 @@ async function reviewBatch(){
  status('Đã mở '+count+' trang. Kiểm tra từng người và chọn “Đã gỡ” sau khi tự hủy follow trên Facebook.');
 }
 const style=document.createElement('style');
-style.textContent='#cf-toggle{position:fixed;top:38%;left:0;right:auto;bottom:auto;background:#2563eb;color:white;border:0;border-radius:25px;padding:10px 15px;z-index:2147483647;cursor:pointer}#cf-panel{position:fixed;top:16%;left:12px;right:auto;bottom:auto;width:340px;max-height:78vh;overflow:auto;box-sizing:border-box;background:#fff;color:#182433;border:2px solid #2563eb;border-radius:12px;padding:12px;z-index:2147483647;font:13px/1.5 Arial;box-shadow:0 10px 30px #0004}#cf-panel[hidden],#cf-toggle[hidden]{display:none!important}#cf-panel button{padding:6px 9px;margin:3px;background:#e5edff;color:#182433;border:1px solid #a9c3fc;border-radius:6px;cursor:pointer}#cf-panel a{color:#155ed6}#cf-status{white-space:pre-wrap;margin:10px 0}#cf-list{max-height:180px;overflow:auto}';
-document.head.append(style);
-const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Follow 24H';document.body.append(toggle);
+style.textContent='#cf-toggle{position:fixed!important;top:38%!important;left:0!important;right:auto!important;bottom:auto!important;display:block;background:#2563eb;color:white;border:0;border-radius:25px;padding:10px 15px;z-index:2147483647;cursor:pointer}#cf-panel{position:fixed!important;top:16%!important;left:12px!important;right:auto!important;bottom:auto!important;width:340px;max-height:78vh;overflow:auto;box-sizing:border-box;background:#fff;color:#182433;border:2px solid #2563eb;border-radius:12px;padding:12px;z-index:2147483647;font:13px/1.5 Arial;box-shadow:0 10px 30px #0004}#cf-panel[hidden],#cf-toggle[hidden]{display:none!important}#cf-panel button{padding:6px 9px;margin:3px;background:#e5edff;color:#182433;border:1px solid #a9c3fc;border-radius:6px;cursor:pointer}#cf-panel a{color:#155ed6}#cf-status{white-space:pre-wrap;margin:10px 0}#cf-list{max-height:180px;overflow:auto}';
+(document.head||document.documentElement).append(style);
+const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Follow 24H';(document.body||document.documentElement).append(toggle);
 const panel=document.createElement('div');panel.id='cf-panel';panel.hidden=false;
 panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close">✕</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><button id="cf-review">Kiểm tra tối đa 10 người quá hạn</button><b>Chưa thấy follow lại sau 24h:</b><div id="cf-list"></div><small>Thời gian 24h tính từ lúc tool ghi nhận lần đầu. Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
-document.body.append(panel);
-toggle.hidden=true;
+(document.body||document.documentElement).append(panel);
+toggle.hidden=false;
 try { GM_registerMenuCommand('Mở Follow Checker 24H',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }
 toggle.onclick=()=>{toggle.hidden=true;panel.hidden=false;render();};
 panel.querySelector('#cf-close').onclick=()=>{panel.hidden=true;toggle.hidden=false;};
@@ -132,4 +135,5 @@ panel.querySelector('#cf-stop').onclick=()=>{state.stop=true;status('Đang dừn
 panel.querySelector('#cf-export').onclick=csv;
 panel.querySelector('#cf-review').onclick=reviewBatch;
 render();
+console.info('[Follow Checker] floating controls mounted');
 })();

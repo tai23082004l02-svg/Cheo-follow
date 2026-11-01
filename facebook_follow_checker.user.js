@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker
 // @namespace    cheo-follow.local
-// @version      2.8.0
+// @version      2.9.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và đối chiếu người chưa theo dõi lại.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -105,14 +105,7 @@ function render(){
  const f=Object.values(db.following).filter(p=>!p.unfollowedAt);
  const miss=f.filter(p=>!db.followers[p.id]);
  e.textContent='Đang theo dõi: '+f.length+' | Follower: '+Object.keys(db.followers).length+' | Chưa thấy follow lại: '+miss.length+'';
- const list=document.querySelector('#cf-list');list.replaceChildren();
- for(const p of pending().slice(0,100)){
-  const line=document.createElement('div');line.style.margin='5px 0';
-  const a=document.createElement('a');a.href=p.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent=p.name;
-  const open=document.createElement('button');open.textContent='Mở để hủy theo dõi';open.onclick=()=>window.open(p.url,'_blank','noopener');
-  const done=document.createElement('button');done.textContent='Xác nhận đã hủy';done.onclick=()=>{if(!confirm('Bạn đã thực sự hủy theo dõi '+p.name+' trên Facebook?'))return;p.unfollowedAt=Date.now();save();render();};
-  line.append(a,' ',open,' ',done);list.append(line);
- }
+
 }
 function csv(){
  const rows=[['Tên','URL','Follow lại','Thời điểm ghi nhận']];
@@ -121,23 +114,85 @@ function csv(){
  const href=URL.createObjectURL(new Blob([payload],{type:'text/csv;charset=utf-8'}));
  const a=document.createElement('a');a.href=href;a.download='cheo-follow-'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(href),1500);
 }
+// Không đoán nhãn nút: chỉ thực hiện khi xác định đúng menu bỏ theo dõi.
+const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+const isUnfollow=t=>/^(bỏ theo dõi|hủy theo dõi|unfollow)(\\s|$)/i.test(norm(t));
+function locateRow(profile){
+ const matches=visible().filter(x=>x.id===profile.id);
+ for(const m of matches){
+  let e=m.node;
+  for(let k=0;k<6&&e;k++,e=e.parentElement){
+   const txt=norm(e.innerText||'');
+   const links=e.querySelectorAll('a[href]').length;
+   const buttons=e.querySelectorAll('button,[role="button"]').length;
+   if(txt.includes(m.name)&&buttons>0&&links<=5&&txt.length<450)return e;
+  }
+ }
+ return null;
+}
+async function unfollowVisible(profile){
+ const row=locateRow(profile);
+ if(!row)return false;
+ const btns=[...row.querySelectorAll('button,[role="button"]')].filter(e=>!e.closest('#cf-panel'));
+ const direct=btns.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
+ if(direct){direct.click();await pause(400);return true;}
+ // Chỉ mở menu tác vụ rõ ràng, tuyệt đối không tự đoán nút theo vị trí.
+ const menu=btns.find(e=>/^(tùy chọn|tùy chọn khác|xem thêm|more|more options|actions|\\.\\.\\.|…)$|menu/i.test(norm(e.getAttribute('aria-label')||e.getAttribute('title')||e.innerText)));
+ if(!menu)return false;
+ menu.click();await pause(420);
+ const opts=[...document.querySelectorAll('[role="menuitem"],[role="menu"] [role="button"],[role="menu"] button')];
+ const choice=opts.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
+ if(!choice){menu.click();return false;}
+ choice.click();await pause(500);
+ // Facebook đôi khi hỏi xác nhận lần hai.
+ const dialogs=[...document.querySelectorAll('[role="dialog"]')];
+ if(dialogs.length){
+  const actions=[...dialogs.at(-1).querySelectorAll('button,[role="button"]')];
+  const confirmBtn=actions.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
+  if(!confirmBtn){status('Facebook hiện hộp thoại không nhận diện được. Đã dừng để tránh gỡ nhầm.');state.stop=true;return false;}
+  confirmBtn.click();await pause(350);
+ }
+ return true;
+}
 async function reviewBatch(){
  if(state.running)return;
  const people=pending();
  if(!people.length)return status('Không có hồ sơ chưa tìm thấy follow lại.');
- if(!db.scans.followers?.completed||!db.scans.following?.completed)return status('Cần quét đủ cả hai danh sách trước khi xét gỡ.');
- if(Date.now()-db.scans.followers.at>3600000||Date.now()-db.scans.following.at>3600000)return status('Cần quét lại cả hai danh sách trong 60 phút gần đây.');
- const count=Math.min(10,people.length);
- if(!confirm('Có '+people.length+' hồ sơ chưa thấy follow lại. Mở tối đa '+count+' hồ sơ để bạn xác nhận hủy theo dõi thủ công? Không phải ai vắng mặt cũng chắc chắn chưa follow lại.'))return;
- for(const p of people.slice(0,count))window.open(p.url,'_blank','noopener');
- status('Đã mở '+count+' trang. Kiểm tra từng người và chọn “Đã gỡ” sau khi tự hủy follow trên Facebook.');
+ const fc=db.scans.followers,fl=db.scans.following;
+ if(!fc?.completed||!fl?.completed)return status('Chưa xác nhận quét đủ hai danh sách. Không hủy tự động.');
+ if(Date.now()-fc.at>3600000||Date.now()-fl.at>3600000)return status('Hãy quét lại cả hai danh sách trong 60 phút gần đây trước khi hủy.');
+ if(!/sk=following/i.test(location.search)&&!/(following)/i.test(location.pathname))return status('Hãy mở tab Đang theo dõi của chính bạn trước.');
+ if(!confirm('Sắp thử hủy theo dõi các hồ sơ chưa xuất hiện trong danh sách follower đã quét. Thao tác ảnh hưởng trực tiếp tới Facebook và không thể hoàn tác tự động. Tiếp tục?'))return;
+ state.running=true;state.stop=false;
+ let done=0,skipped=0,steps=0;
+ const processed=new Set();
+ try{
+  while(!state.stop&&steps<120){
+   const current=visible().filter(x=>db.following[x.id]&&!db.followers[x.id]&&!db.following[x.id].unfollowedAt&&!processed.has(x.id));
+   for(const x of current){
+    if(state.stop)break;
+    processed.add(x.id);
+    const ok=await unfollowVisible(x);
+    if(ok){db.following[x.id].unfollowedAt=Date.now();done++;save();}
+    else skipped++;
+    status('Đã thử hủy '+done+' | Không thao tác được '+skipped+' | Nhấn Dừng để ngắt.');
+    await pause(700);
+   }
+   const el=scroller();if(!el)break;
+   const old=el.scrollTop;el.scrollBy({top:Math.max(400,Math.round(el.clientHeight*.75)),behavior:'instant'});
+   await pause(900);steps++;
+   if(el.scrollTop===old)break;
+  }
+  status('Kết thúc: '+done+' hồ sơ đã thao tác; '+skipped+' hồ sơ không tìm được nút phù hợp. Hãy kiểm tra lại trên Facebook.');
+ }catch(e){status('Đã dừng vì lỗi: '+e.message);}
+ finally{state.running=false;render();}
 }
 const style=document.createElement('style');
 style.textContent='#cf-toggle{position:fixed!important;top:38%!important;left:0!important;right:auto!important;bottom:auto!important;display:block;background:#2563eb;color:white;border:0;border-radius:25px;padding:10px 15px;z-index:2147483647;cursor:pointer}#cf-panel{position:fixed!important;top:16%!important;left:12px!important;right:auto!important;bottom:auto!important;width:340px;max-height:78vh;overflow:auto;box-sizing:border-box;background:#fff;color:#182433;border:2px solid #2563eb;border-radius:12px;padding:12px;z-index:2147483647;font:13px/1.5 Arial;box-shadow:0 10px 30px #0004}#cf-panel[hidden],#cf-toggle[hidden]{display:none!important}#cf-panel button{padding:6px 9px;margin:3px;background:#e5edff;color:#182433;border:1px solid #a9c3fc;border-radius:6px;cursor:pointer}#cf-panel a{color:#155ed6}#cf-status{white-space:pre-wrap;margin:10px 0}#cf-list{max-height:180px;overflow:auto}';
 (document.head||document.documentElement).append(style);
 const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Mở Follow Checker';(document.body||document.documentElement).append(toggle);
 const panel=document.createElement('div');panel.id='cf-panel';panel.hidden=false;
-panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review">Mở 10 hồ sơ để kiểm tra</button><b>Chưa thấy follow lại:</b><div id="cf-list"></div><small>Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
+panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review" style="background:#dc2626;color:white">Hủy follow người không theo dõi lại</button><small>Chỉ chạy khi hai danh sách được quét đủ và mới trong 60 phút. Có thể dừng, kết quả cần kiểm chứng.</small>';
 (document.body||document.documentElement).append(panel);
 toggle.hidden=true;
 try { GM_registerMenuCommand('Mở Follow Checker',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }

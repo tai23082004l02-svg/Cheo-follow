@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      1.6.0
+// @version      1.7.0
 // @description  Quét bình luận, tạo danh sách; chỉ Follow và Like khi người dùng nhấn từng mục.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
@@ -25,7 +25,7 @@ const css=document.createElement('style');
 css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
 (document.head||document.documentElement).append(css);
 const panel=document.createElement('div');panel.id='ccf-panel';
-panel.innerHTML='<b>Facebook Comment Follow v1.6</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Bỏ qua và cuộn tiếp</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
+panel.innerHTML='<b>Facebook Comment Follow v1.7</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Bỏ qua và cuộn tiếp</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
 const show=document.createElement('button');show.id='ccf-open';show.textContent='☰ Comment Follow';show.hidden=true;
 (document.body||document.documentElement).append(panel,show);
 const $=id=>panel.querySelector('#'+id);
@@ -95,22 +95,54 @@ function likeFor(card){
  }
  return target&&isVisible(target)?target:null;
 }
+const elementIds=new WeakMap();
+function followNodes(){
+ const r=dialogRoot(),w=document.createTreeWalker(r,NodeFilter.SHOW_TEXT),nodes=[];
+ while(w.nextNode()){
+  const t=w.currentNode;
+  if(!isFollow(t.textContent))continue;
+  const e=t.parentElement;
+  if(e&&isVisible(e)&&!e.closest('#ccf-panel'))nodes.push(e);
+ }
+ return nodes;
+}
+function nearestComment(node){
+ let p=node;
+ for(let i=0;i<12&&p&&p!==dialogRoot();i++,p=p.parentElement){
+  const t=txt(p);
+  if(t.length>1100)break;
+  const replies=[...p.querySelectorAll('span,[role="button"],button')].filter(x=>x.children.length===0&&/^(Trả lời|Reply)$/i.test(txt(x)));
+  if(replies.length&&p.getBoundingClientRect().height>35){
+   const follows=followNodes().filter(n=>p.contains(n));
+   if(follows.length===1)return p;
+  }
+ }
+ return node.parentElement?.parentElement?.parentElement||node.parentElement;
+}
+function locateName(node,card){
+ const r=node.getBoundingClientRect();
+ // Facebook author's name sits on the same line immediately left of "Theo dõi".
+ const links=[...card.querySelectorAll('a[href]')].filter(isVisible).map(el=>{
+  const b=el.getBoundingClientRect();
+  return {el,b,dist:Math.abs((b.top+b.bottom)/2-(r.top+r.bottom)/2)};
+ }).filter(x=>x.b.right<=r.left+12&&x.dist<24&&norm(x.el.innerText).length>1);
+ links.sort((a,b)=>a.dist-b.dist||b.b.right-a.b.right);
+ if(links[0])return norm(links[0].el.innerText).slice(0,80);
+ const t=norm(card.innerText||'');
+ const head=t.split(/Theo dõi|Follow/i)[0].split('·')[0].trim();
+ return head.length>1&&head.length<75?head:'Người bình luận';
+}
 function collect(){
  let added=0;
- const root=dialogRoot(),walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT),nodes=[];
- while(walker.nextNode())if(isFollow(walker.currentNode.textContent))nodes.push(walker.currentNode.parentElement);
- for(const node of nodes){
-  if(!isVisible(node)||node.closest('#ccf-panel'))continue;
-  const card=getCard(node);if(!card)continue;
+ for(const node of followNodes()){
   const follow=node.closest('a,button,[role="button"]')||node;
-  const name=cardName(card,node);
-  if(name==='Không rõ tên')continue;
-  const comment=norm(card.innerText||'').slice(0,180);
-  const profile=[...card.querySelectorAll('a[href]')].find(x=>norm(x.innerText)===name)?.href||'';
-  const key=profile?profile+'|'+comment.slice(-70):name.toLowerCase()+'|'+comment.slice(-70);
+  let key=elementIds.get(node);
+  if(!key){key='comment-'+(++S.seq);elementIds.set(node,key);}
+  const card=nearestComment(node);
+  const name=locateName(node,card);
   let item=S.found.get(key);
-  if(!item){item={id:++S.seq,key,name,follow,like:null,state:'ready'};S.found.set(key,item);added++;}
-  else item.follow=follow;
+  if(!item){item={id:S.seq,key,name,follow,like:null,state:'ready'};S.found.set(key,item);added++;}
+  else {item.follow=follow;item.name=name;}
   item.like=likeFor(card);
   follow.classList.add('ccf-hit');
  }
@@ -149,12 +181,8 @@ function scroller(){
 }
 function visibleFollowCount(){
  const area=dialogRoot().getBoundingClientRect();
- const walker=document.createTreeWalker(dialogRoot(),NodeFilter.SHOW_TEXT);
  let count=0;
- while(walker.nextNode()){
-  const n=walker.currentNode;
-  if(!isFollow(n.textContent))continue;
-  const el=n.parentElement;
+ for(const el of followNodes()){
   if(!isVisible(el)||el.closest('#ccf-panel'))continue;
   const r=el.getBoundingClientRect();
   if(r.top>=area.top+55&&r.bottom<=area.bottom-45&&r.top<innerHeight&&r.bottom>0)count++;
@@ -174,7 +202,7 @@ async function scan(){
     collect();
     const count=visibleFollowCount();
     if(count===0||S.skip)break;
-    status('Đang chờ xử lý '+count+' nút Theo dõi trong khung bình luận. Chọn Follow + Like hoặc Bỏ qua và cuộn tiếp.');
+    status('Đang chờ '+count+' nút Theo dõi. Đã ghi nhận '+S.found.size+' mục. Chọn Follow + Like hoặc Bỏ qua và cuộn tiếp.');
     await nap(500);
    }
    if(S.stop)break;

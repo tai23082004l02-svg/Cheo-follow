@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker
 // @namespace    cheo-follow.local
-// @version      2.9.1
+// @version      2.9.2
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và đối chiếu người chưa theo dõi lại.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -159,8 +159,8 @@ async function reviewBatch(){
  const people=pending();
  if(!people.length)return status('Không có hồ sơ chưa tìm thấy follow lại.');
  const fc=db.scans.followers,fl=db.scans.following;
- if(!fc?.completed||!fl?.completed)return status('Chưa xác nhận quét đủ hai danh sách. Không hủy tự động.');
- if(Date.now()-fc.at>3600000||Date.now()-fl.at>3600000)return status('Hãy quét lại cả hai danh sách trong 60 phút gần đây trước khi hủy.');
+ if(!fc||!fl)return status('Hãy quét cả hai danh sách ít nhất một lần.');
+ 
  if(!/sk=following/i.test(location.search)&&!/(following)/i.test(location.pathname))return status('Hãy mở tab Đang theo dõi của chính bạn trước.');
  if(!confirm('Sắp thử hủy theo dõi các hồ sơ chưa xuất hiện trong danh sách follower đã quét. Thao tác ảnh hưởng trực tiếp tới Facebook và không thể hoàn tác tự động. Tiếp tục?'))return;
  state.running=true;state.stop=false;

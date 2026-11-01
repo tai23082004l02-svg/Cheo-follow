@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Facebook Follow Checker 24H
+// @name         Facebook Follow Checker
 // @namespace    cheo-follow.local
-// @version      2.6.1
-// @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và kiểm tra quá hạn 24 giờ.
+// @version      2.7.0
+// @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và đối chiếu người chưa theo dõi lại.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
 // @match        https://web.facebook.com/*
@@ -18,7 +18,7 @@
 if(window.__followChecker21)return;
 window.__followChecker21=true;
 console.info('[Follow Checker] script loaded v2.4');
-const KEY='cheo_follow_v21', DAY=86400000, nap=ms=>new Promise(r=>setTimeout(r,ms));
+const KEY='cheo_follow_v21', nap=ms=>new Promise(r=>setTimeout(r,ms));
 const storeRead=(key,fallback)=>{try{return typeof GM_getValue==='function'?GM_getValue(key,fallback):localStorage.getItem(key)||fallback;}catch{return localStorage.getItem(key)||fallback;}};
 const storeWrite=(key,val)=>{try{if(typeof GM_setValue==='function')return GM_setValue(key,val);}catch(e){console.warn(e)}localStorage.setItem(key,val);};
 const state={running:false,stop:false};
@@ -98,13 +98,13 @@ async function scan(mode){
  finally{state.running=false;render();}
 }
 function pending(){
- return Object.values(db.following).filter(p=>!p.unfollowedAt&&!db.followers[p.id]&&Date.now()-p.firstSeen>=DAY);
+ return Object.values(db.following).filter(p=>!p.unfollowedAt&&!db.followers[p.id]);
 }
 function render(){
  const e=document.querySelector('#cf-stats');if(!e)return;
  const f=Object.values(db.following).filter(p=>!p.unfollowedAt);
  const miss=f.filter(p=>!db.followers[p.id]);
- e.textContent='Đang theo dõi: '+f.length+' | Follower: '+Object.keys(db.followers).length+' | Chưa thấy follow lại: '+miss.length+' | Quá 24h: '+pending().length;
+ e.textContent='Đang theo dõi: '+f.length+' | Follower: '+Object.keys(db.followers).length+' | Chưa thấy follow lại: '+miss.length+'';
  const list=document.querySelector('#cf-list');list.replaceChildren();
  for(const p of pending().slice(0,100)){
   const line=document.createElement('div');line.style.margin='5px 0';
@@ -114,8 +114,8 @@ function render(){
  }
 }
 function csv(){
- const rows=[['Tên','URL','Follow lại','Thời điểm ghi nhận','Quá 24h']];
- for(const p of Object.values(db.following))rows.push([p.name,p.url,db.followers[p.id]?'Có':'Chưa thấy',new Date(p.firstSeen).toLocaleString('vi-VN'),Date.now()-p.firstSeen>=DAY?'Có':'Không']);
+ const rows=[['Tên','URL','Follow lại','Thời điểm ghi nhận']];
+ for(const p of Object.values(db.following))rows.push([p.name,p.url,db.followers[p.id]?'Có':'Chưa thấy',new Date(p.firstSeen).toLocaleString('vi-VN')]);
  const payload='\ufeff'+rows.map(r=>r.map(v=>'"'+String(v).replaceAll('"','""')+'"').join(',')).join('\r\n');
  const href=URL.createObjectURL(new Blob([payload],{type:'text/csv;charset=utf-8'}));
  const a=document.createElement('a');a.href=href;a.download='cheo-follow-'+new Date().toISOString().slice(0,10)+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(href),1500);
@@ -123,23 +123,23 @@ function csv(){
 async function reviewBatch(){
  if(state.running)return;
  const people=pending();
- if(!people.length)return status('Không có hồ sơ quá hạn 24 giờ.');
+ if(!people.length)return status('Không có hồ sơ chưa tìm thấy follow lại.');
  if(!db.scans.followers?.completed||!db.scans.following?.completed)return status('Cần quét đủ cả hai danh sách trước khi xét gỡ.');
  if(Date.now()-db.scans.followers.at>3600000||Date.now()-db.scans.following.at>3600000)return status('Cần quét lại cả hai danh sách trong 60 phút gần đây.');
  const count=Math.min(10,people.length);
- if(!confirm('Có '+people.length+' hồ sơ quá 24 giờ chưa thấy follow lại. Mở tối đa '+count+' hồ sơ để bạn xác nhận hủy theo dõi thủ công? Không phải ai vắng mặt cũng chắc chắn chưa follow lại.'))return;
+ if(!confirm('Có '+people.length+' hồ sơ chưa thấy follow lại. Mở tối đa '+count+' hồ sơ để bạn xác nhận hủy theo dõi thủ công? Không phải ai vắng mặt cũng chắc chắn chưa follow lại.'))return;
  for(const p of people.slice(0,count))window.open(p.url,'_blank','noopener');
  status('Đã mở '+count+' trang. Kiểm tra từng người và chọn “Đã gỡ” sau khi tự hủy follow trên Facebook.');
 }
 const style=document.createElement('style');
 style.textContent='#cf-toggle{position:fixed!important;top:38%!important;left:0!important;right:auto!important;bottom:auto!important;display:block;background:#2563eb;color:white;border:0;border-radius:25px;padding:10px 15px;z-index:2147483647;cursor:pointer}#cf-panel{position:fixed!important;top:16%!important;left:12px!important;right:auto!important;bottom:auto!important;width:340px;max-height:78vh;overflow:auto;box-sizing:border-box;background:#fff;color:#182433;border:2px solid #2563eb;border-radius:12px;padding:12px;z-index:2147483647;font:13px/1.5 Arial;box-shadow:0 10px 30px #0004}#cf-panel[hidden],#cf-toggle[hidden]{display:none!important}#cf-panel button{padding:6px 9px;margin:3px;background:#e5edff;color:#182433;border:1px solid #a9c3fc;border-radius:6px;cursor:pointer}#cf-panel a{color:#155ed6}#cf-status{white-space:pre-wrap;margin:10px 0}#cf-list{max-height:180px;overflow:auto}';
 (document.head||document.documentElement).append(style);
-const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Mở Follow 24H';(document.body||document.documentElement).append(toggle);
+const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Mở Follow Checker';(document.body||document.documentElement).append(toggle);
 const panel=document.createElement('div');panel.id='cf-panel';panel.hidden=false;
-panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review">Kiểm tra tối đa 10 người quá hạn</button><b>Chưa thấy follow lại sau 24h:</b><div id="cf-list"></div><small>Thời gian 24h tính từ lúc tool ghi nhận lần đầu. Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
+panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review">Kiểm tra tối đa 10 người chưa follow lại</button><b>Chưa thấy follow lại:</b><div id="cf-list"></div><small>Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
 (document.body||document.documentElement).append(panel);
 toggle.hidden=true;
-try { GM_registerMenuCommand('Mở Follow Checker 24H',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }
+try { GM_registerMenuCommand('Mở Follow Checker',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }
 toggle.onclick=()=>{toggle.hidden=true;panel.hidden=false;render();};
 panel.querySelector('#cf-close').onclick=()=>{panel.hidden=true;toggle.hidden=false;};
 panel.querySelector('#cf-following').onclick=()=>scan('following');

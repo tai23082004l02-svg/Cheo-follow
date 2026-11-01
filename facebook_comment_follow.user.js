@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      1.4.0
+// @version      1.5.0
 // @description  Quét bình luận, tạo danh sách; chỉ Follow và Like khi người dùng nhấn từng mục.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
@@ -20,12 +20,12 @@ const txt=e=>norm(e?.innerText||e?.textContent||e?.getAttribute?.('aria-label')|
 const isFollow=s=>/^(theo dõi|follow)$/i.test(norm(s));
 const isLike=s=>/^(thích|like)$/i.test(norm(s));
 const isVisible=e=>!!(e&&e.isConnected&&e.getBoundingClientRect().width&&e.getBoundingClientRect().height);
-const S={running:false,stop:false,steps:0,found:new Map(),seq:0};
+const S={running:false,stop:false,steps:0,found:new Map(),seq:0,skip:false};
 const css=document.createElement('style');
 css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
 (document.head||document.documentElement).append(css);
 const panel=document.createElement('div');panel.id='ccf-panel';
-panel.innerHTML='<b>Facebook Comment Follow v1.4</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
+panel.innerHTML='<b>Facebook Comment Follow v1.5</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Bỏ qua và cuộn tiếp</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
 const show=document.createElement('button');show.id='ccf-open';show.textContent='☰ Comment Follow';show.hidden=true;
 (document.body||document.documentElement).append(panel,show);
 const $=id=>panel.querySelector('#'+id);
@@ -130,7 +130,6 @@ function render(){
  }
 }
 async function act(p){
- if(S.running){status('Hãy dừng cuộn trước khi thao tác.');return;}
  if(!isVisible(p.follow)){p.state='lost';render();status('Bình luận này đã bị Facebook bỏ khỏi vùng hiển thị khi cuộn. Hãy cuộn tới bình luận rồi nhấn Tìm trên màn hình.');return;}
  // The user clicks for this particular comment: do not run any bulk actions.
  const follow=p.follow;
@@ -150,38 +149,56 @@ function scroller(){
  });
  return els[0]||document.scrollingElement;
 }
+function visibleFollowCount(){
+ const area=dialogRoot().getBoundingClientRect();
+ const walker=document.createTreeWalker(dialogRoot(),NodeFilter.SHOW_TEXT);
+ let count=0;
+ while(walker.nextNode()){
+  const n=walker.currentNode;
+  if(!isFollow(n.textContent))continue;
+  const el=n.parentElement;
+  if(!isVisible(el)||el.closest('#ccf-panel'))continue;
+  const r=el.getBoundingClientRect();
+  if(r.top>=area.top+55&&r.bottom<=area.bottom-45&&r.top<innerHeight&&r.bottom>0)count++;
+ }
+ return count;
+}
 async function scan(){
  if(S.running)return;
- S.running=true;S.stop=false;
- let idle=0,stuck=0;
+ S.running=true;S.stop=false;S.skip=false;
+ let stuck=0;
  try{
   for(let i=0;i<120&&!S.stop;i++){
-   // Capture the currently rendered comments BEFORE scrolling.
-   const beforeCount=collect();
-   const el=scroller();
-   const oldTop=el.scrollTop;
+   collect();
+   // Don't scroll while the current view has Follow buttons.
+   // The user can click individual Follow+Like buttons, or explicitly skip.
+   while(!S.stop){
+    collect();
+    const count=visibleFollowCount();
+    if(count===0||S.skip)break;
+    status('Đang chờ xử lý '+count+' nút Theo dõi trong khung bình luận. Chọn Follow + Like hoặc Bỏ qua và cuộn tiếp.');
+    await nap(500);
+   }
+   if(S.stop)break;
+   S.skip=false;
+   const el=scroller(),before=el.scrollTop;
    const step=Math.max(110,Math.min(240,Math.round(el.clientHeight*.25)));
    el.scrollBy({top:step,behavior:'instant'});
-   await nap(1000);
-   // Capture new comments AFTER scrolling, including partially loaded comments.
-   const newCount=collect();
-   S.steps=i+1;render();
-   const gained=beforeCount+newCount;
-   idle=gained===0?idle+1:0;
-   stuck=el.scrollTop===oldTop?stuck+1:0;
-   status('Quét '+S.steps+'/120 | đã tìm '+S.found.size+' | lượt không có người mới '+idle);
-   // Never stop only because a few scrolls contain no Follow buttons.
-   if(stuck>=5){status('Đã đứng ở cuối vùng cuộn qua 5 lượt. Tổng tìm '+S.found.size+' người.');break;}
+   await nap(900);
+   collect();S.steps=i+1;render();
+   stuck=el.scrollTop===before?stuck+1:0;
+   status('Đã cuộn '+S.steps+'/120 | thu thập '+S.found.size+' bình luận.');
+   if(stuck>=5){status('Đã tới cuối vùng cuộn.');break;}
   }
-  collect();
   if(S.stop)status('Đã dừng. Tìm được '+S.found.size+' người.');
-  else if(S.steps>=120)status('Đã quét tối đa 120 lượt. Tìm được '+S.found.size+' người; có thể chạy tiếp.');
+  else if(S.steps>=120)status('Đã quét tối đa 120 lượt.');
  }catch(e){status('Lỗi: '+e.message)}
- finally{S.running=false;}
+ finally{S.running=false;S.skip=false;}
 }
 $('ccf-find').onclick=()=>status('Tìm thêm '+collect()+' người trên màn hình.');
 $('ccf-scroll').onclick=scan;
 $('ccf-stop').onclick=()=>{S.stop=true;status('Đang dừng...')};
+$('ccf-skip').onclick=()=>{S.skip=true;status('Đã bỏ qua các nút Follow còn lại ở vị trí hiện tại.');};
 $('ccf-clear').onclick=()=>{document.querySelectorAll('.ccf-hit').forEach(e=>e.classList.remove('ccf-hit'));S.found.clear();S.steps=0;render();status('Đã xóa danh sách.')};
 $('ccf-hide').onclick=()=>{panel.hidden=true;show.hidden=false};
 show.onclick=()=>{panel.hidden=false;show.hidden=true};

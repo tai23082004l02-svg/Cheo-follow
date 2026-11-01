@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker 24H
 // @namespace    cheo-follow.local
-// @version      2.6.0
+// @version      2.6.1
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và kiểm tra quá hạn 24 giờ.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -71,7 +71,7 @@ async function scan(mode){
  state.running=true;state.stop=false;
  let steps=0,idle=0,fresh=0,completed=false,reason='';
  try{
-  const limit=40;
+  const limit=120;
   for(;steps<limit&&!state.stop;steps++){
    const newly=collect(mode);fresh+=newly;
    idle=newly===0?idle+1:0;
@@ -90,7 +90,7 @@ async function scan(mode){
   }
   fresh+=collect(mode);
   if(state.stop)reason='Bạn đã dừng quét.';
-  if(steps>=40)reason='Đã chạm giới hạn 40 lượt cuộn.';
+  if(steps>=limit)reason='Đã chạm giới hạn 120 lượt cuộn.';
   db.scans[mode]={at:Date.now(),completed:completed&&!state.stop,count:Object.keys(db[mode]).length};
   save();
   status('Kết thúc: lưu '+Object.keys(db[mode]).length+' hồ sơ ('+fresh+' mới). '+(reason||'Chưa xác nhận quét đủ.'));

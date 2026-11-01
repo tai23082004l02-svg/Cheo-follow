@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      2.1.0
-// @description  Quét bình luận, tạo danh sách; chỉ Follow và Like khi người dùng nhấn từng mục.
+// @version      2.6.0
+// @description  Quét bình luận, tự động lọc trùng người dùng và loại trừ triệt để nút Like đã bấm để tránh bị gỡ Like/Follow.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
@@ -15,74 +15,63 @@
 'use strict';
 if(document.getElementById('ccf-panel'))return;
 const nap=ms=>new Promise(r=>setTimeout(r,ms));
+const randDelay=(min=500,max=1100)=>nap(Math.floor(Math.random()*(max-min+1))+min);
 const norm=s=>String(s||'').replace(/\s+/g,' ').trim();
 const txt=e=>norm(e?.innerText||e?.textContent||e?.getAttribute?.('aria-label')||'');
 const isFollow=s=>/^(theo dõi|follow)$/i.test(norm(s));
 const isLike=s=>/^(thích|like)$/i.test(norm(s));
+
+// Trạng thái đã Follow hoặc đã Like
+const isAlreadyFollowed=s=>/^(đang theo dõi|following|bỏ theo dõi|unfollow)$/i.test(norm(s));
+const isAlreadyLiked=s=>/^(đã thích|liked|gỡ|bỏ thích|unlike)$/i.test(norm(s));
 const isVisible=e=>!!(e&&e.isConnected&&e.getBoundingClientRect().width&&e.getBoundingClientRect().height);
-const S={running:false,stop:false,steps:0,found:new Map(),seq:0,skip:false};
+
+// Danh sách lưu trữ Profile/User đã xử lý để tránh tương tác lặp lại
+const processedUsers=new Set();
+const S={running:false,stop:false,steps:0,found:new Map(),seq:0};
+
 const css=document.createElement('style');
-css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
+css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel button.btn-auto{background:#10b981!important;color:#fff!important;border-color:#059669!important;font-weight:bold!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
 (document.head||document.documentElement).append(css);
+
 const panel=document.createElement('div');panel.id='ccf-panel';
-panel.innerHTML='<b>Facebook Comment Follow v2.1</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-scroll">Tìm kiếm</button><button id="ccf-stop">■ Dừng</button><button id="ccf-review">Kiểm tra toàn bộ danh sách</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Kiểm tra toàn bộ không tự Follow/Like. Mỗi nút Follow + Like vẫn cần bạn chủ động bấm.</small>';
+panel.innerHTML='<b>Facebook Comment Follow v2.6</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-scroll">Tìm kiếm</button><button id="ccf-auto" class="btn-auto">▶ Xử lý toàn bộ (Nhanh)</button><button id="ccf-stop">■ Dừng</button><button id="ccf-review">Kiểm tra danh sách</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div>';
 const show=document.createElement('button');show.id='ccf-open';show.textContent='☰ Comment Follow';show.hidden=true;
 (document.body||document.documentElement).append(panel,show);
+
 const $=id=>panel.querySelector('#'+id);
 const status=s=>$('ccf-status').textContent=s;
+
 function dialogRoot(){
  return [...document.querySelectorAll('[role="dialog"]')].filter(isVisible).sort((a,b)=>b.getBoundingClientRect().height-a.getBoundingClientRect().height)[0]||document.querySelector('[role="main"]')||document.body;
 }
-function clickableFollow(el){
- if(!isFollow(txt(el)))return null;
- const e=el.closest('a,[role="button"],button')||el;
- if(e.closest('#ccf-panel'))return null;
- return isVisible(e)?e:null;
-}
-function findComment(el){
- let node=el;
- for(let i=0;i<9&&node;i++,node=node.parentElement){
-  const t=txt(node);
-  if(t.length>1200)break;
-  const actions=[...node.querySelectorAll('[role="button"],button,a,span')].filter(a=>a!==el&&isVisible(a)&&isLike(txt(a)));
-  if(actions.length){
-   const nameNode=el.parentElement;
-   const name=norm((nameNode?.innerText||'').split(/(?:Theo dõi|Follow)/i)[0]).replace(/\s*[·•]\s*\d+.*$/,'').slice(0,90);
-   return {container:node,like:actions[0],name:name||'Người bình luận'};
+
+// Kiểm tra xem nút hoặc icon like đã ở trạng thái ĐÃ LIKE chưa
+function isButtonAlreadyLiked(btn){
+ if(!btn)return true;
+ const fullText=txt(btn);
+ if(isAlreadyLiked(fullText))return true;
+ if(btn.getAttribute('aria-pressed')==='true')return true;
+ 
+ // Kiểm tra màu chữ / màu icon (màu xanh khi đã like)
+ try{
+  const color=getComputedStyle(btn).color||'';
+  if(/rgb\(\s*(?:8|24|32),\s*(?:102|119|120)/.test(color))return true;
+  const svg=btn.querySelector('svg');
+  if(svg){
+   const fill=getComputedStyle(svg).fill||'';
+   if(/rgb\(\s*(?:8|24|32),\s*(?:102|119|120)/.test(fill))return true;
   }
-  // Some Facebook comment rows show the Like action only as an unlabeled thumbs-up icon.
-  if(t.length>30&&t.length<500&&/Trả lời|Reply/.test(t)){
-   const name=norm((el.parentElement?.innerText||'').split(/(?:Theo dõi|Follow)/i)[0]).replace(/\s*[·•]\s*\d+.*$/,'').slice(0,90);
-   return {container:node,like:null,name:name||'Người bình luận'};
-  }
- }
- return null;
+ }catch(e){}
+ return false;
 }
-function getCard(node){
- let el=node;
- for(let i=0;i<12&&el;i++,el=el.parentElement){
-  if(el===dialogRoot()||el===document.body)break;
-  const text=txt(el);
-  if(text.length>1300)break;
-  const followCount=[...el.querySelectorAll('span,a,[role="button"]')].filter(x=>x.children.length===0&&isFollow(txt(x))).length;
-  const reply=/(Trả lời|Reply)/i.test(text);
-  if(reply&&followCount===1&&el.getBoundingClientRect().height>=75)return el;
- }
- return null;
-}
-function cardName(card,followNode){
- const line=norm(card.innerText||'').split('\n').map(norm).filter(Boolean);
- const entry=line.find(x=>x.includes('Theo dõi')||x.includes('Follow'))||'';
- const candidate=entry.split(/\s*[·•]\s*|\s+Theo dõi|\s+Follow/i)[0].trim();
- if(candidate.length>1&&candidate.length<85)return candidate;
- const anchors=[...card.querySelectorAll('a[href]')].filter(isVisible);
- const match=anchors.map(a=>norm(a.innerText)).find(x=>x.length>1&&x.length<85&&!isFollow(x)&&!/Trả lời|Chia sẻ|Reply|Share/i.test(x));
- return match||'Không rõ tên';
-}
+
 function likeFor(card){
- // Facebook shows a thumbs-up SVG with accessible name "Thích".
  const icons=[...card.querySelectorAll('svg[aria-label],svg[role="img"]')].filter(isVisible);
- const likes=icons.filter(e=>isLike(e.getAttribute('aria-label')||e.querySelector('title')?.textContent||''));
+ const likes=icons.filter(e=>{
+  const label=e.getAttribute('aria-label')||e.querySelector('title')?.textContent||'';
+  return isLike(label)&&!isAlreadyLiked(label);
+ });
  if(likes.length!==1)return null;
  const icon=likes[0];
  let target=icon.closest('[role="button"],button,a');
@@ -95,7 +84,7 @@ function likeFor(card){
  }
  return target&&isVisible(target)?target:null;
 }
-const elementIds=new WeakMap();
+
 function followNodes(){
  const r=dialogRoot(),w=document.createTreeWalker(r,NodeFilter.SHOW_TEXT),nodes=[];
  while(w.nextNode()){
@@ -106,6 +95,7 @@ function followNodes(){
  }
  return nodes;
 }
+
 function nearestComment(node){
  let p=node;
  for(let i=0;i<12&&p&&p!==dialogRoot();i++,p=p.parentElement){
@@ -119,9 +109,9 @@ function nearestComment(node){
  }
  return node.parentElement?.parentElement?.parentElement||node.parentElement;
 }
+
 function locateName(node,card){
  const r=node.getBoundingClientRect();
- // Facebook author's name sits on the same line immediately left of "Theo dõi".
  const links=[...card.querySelectorAll('a[href]')].filter(isVisible).map(el=>{
   const b=el.getBoundingClientRect();
   return {el,b,dist:Math.abs((b.top+b.bottom)/2-(r.top+r.bottom)/2)};
@@ -132,53 +122,107 @@ function locateName(node,card){
  const head=t.split(/Theo dõi|Follow/i)[0].split('·')[0].trim();
  return head.length>1&&head.length<75?head:'Người bình luận';
 }
+
+// Trích xuất mã User định danh chuẩn (ID trang cá nhân hoặc URL làm sạch)
+function extractUserKey(card,name){
+ const links=[...card.querySelectorAll('a[href]')].filter(a=>a.getBoundingClientRect().width>0);
+ const profileLink=links.find(a=>(a.innerText||'').trim()===name)?.href||links[0]?.href||'';
+ if(profileLink){
+  try{
+   const url=new URL(profileLink);
+   // Lấy profile.php?id=... hoặc /username
+   if(url.searchParams.has('id'))return 'uid:'+url.searchParams.get('id');
+   const pathname=url.pathname.replace(/^\/+/,'').split('/')[0];
+   if(pathname&&!['groups','posts','watch','photo'].includes(pathname))return 'path:'+pathname;
+  }catch(e){}
+ }
+ // Nếu không bắt được link thì dùng tên người dùng làm khóa định danh duy nhất
+ return 'user:'+name.toLowerCase();
+}
+
 function collect(){
  let added=0;
  for(const node of followNodes()){
   const follow=node.closest('a,button,[role="button"]')||node;
   const card=nearestComment(node);
   const name=locateName(node,card);
-  // Deduplicate only the same comment when Facebook re-renders it.
-  // Never filter by previous follow history.
-  const profile=[...card.querySelectorAll('a[href]')].find(a=>a.getBoundingClientRect().width>0&&
-    (a.innerText||'').trim()===name)?.href||'';
-  const snippet=(card.innerText||'').replace(/\s+/g,' ').trim().slice(0,220);
-  const stable=profile&&snippet.length>20?profile+'|'+snippet:null;
-  let key=stable||elementIds.get(node);
-  if(!key){key='comment-'+(++S.seq);}
-  elementIds.set(node,key);
-  let item=S.found.get(key);
-  if(!item){item={id:S.seq,key,name,follow,like:null,state:'ready'};S.found.set(key,item);added++;}
-  else {if(item.state!=='done'&&item.state!=='partial')item.follow=follow;item.name=name;}
-  item.like=likeFor(card);
+  
+  // LỌC TRÙNG THEO USER: Bất kể người đó comment bao nhiêu lần
+  const userKey=extractUserKey(card,name);
+
+  // Đã từng xử lý người này rồi -> bỏ qua
+  if(processedUsers.has(userKey))continue;
+
+  // Nếu người này đã có trong danh sách chờ -> bỏ qua bình luận thứ 2, 3... của họ
+  if(S.found.has(userKey))continue;
+
+  const item={id:++S.seq,key:userKey,name,follow,like:likeFor(card),state:'ready'};
+  S.found.set(userKey,item);
   follow.classList.add('ccf-hit');
+  added++;
  }
- render();return added;
+ render();
+ return added;
 }
+
 function render(){
- $('ccf-count').textContent='Đã tìm '+S.found.size+' người | Lượt cuộn: '+S.steps;
+ $('ccf-count').textContent='Chờ xử lý: '+S.found.size+' người (không trùng) | Đã xong: '+processedUsers.size+' | Lượt cuộn: '+S.steps;
  const root=$('ccf-people');root.replaceChildren();
  for(const p of S.found.values()){
   const row=document.createElement('div');row.className='ccf-person';
-  const title=document.createElement('span');title.textContent=p.name+' — '+(p.state==='done'?'Đã nhấn':p.state==='partial'?'Cần Like thủ công':p.state==='lost'?'Không còn trên màn hình':'Chưa xử lý');
-  const btn=document.createElement('button');btn.textContent='Follow + Like';btn.disabled=p.state==='done';
+  const title=document.createElement('span');title.textContent=p.name+' — '+(p.state==='lost'?'Không còn trên màn hình':'Chờ xử lý');
+  const btn=document.createElement('button');btn.textContent='Follow + Like';
   btn.onclick=()=>act(p);
   row.append(title,document.createElement('br'),btn);root.append(row);
  }
 }
+
 async function act(p){
- if(!isVisible(p.follow)){p.state='lost';render();status('Bình luận này đã bị Facebook bỏ khỏi vùng hiển thị khi cuộn. Hãy cuộn tới bình luận rồi nhấn Tìm trên màn hình.');return;}
- // The user clicks for this particular comment: do not run any bulk actions.
+ if(!p.follow||!p.follow.isConnected){
+  p.state='lost';render();
+  status('Bình luận của '+p.name+' đã bị tháo khỏi DOM do cuộn.');
+  return false;
+ }
+ p.follow.scrollIntoView({behavior:'instant',block:'center'});
+ await nap(180);
+
+ if(!isVisible(p.follow)){
+  p.state='lost';render();
+  return false;
+ }
+
  const follow=p.follow;
- const like=p.like;
- follow.click();await nap(300);
- if(isVisible(like)&&!isFollow(txt(like))){like.click();p.state='done';status('Đã nhấn Follow và Like cho '+p.name+'. Kiểm tra trên Facebook để xác nhận.');}
- else{p.state='partial';status('Đã nhấn Follow cho '+p.name+', nhưng chưa nhận diện chắc chắn nút Like. Bạn hãy Like bình luận thủ công.');}
+ const followText=txt(follow);
+
+ // BẢO VỆ FOLLOW: Không click nếu đã theo dõi
+ if(!isAlreadyFollowed(followText)&&isFollow(followText)){
+  follow.click();
+ }
+ await nap(180);
+
+ const card=nearestComment(follow);
+ const likeTarget=p.like&&isVisible(p.like)?p.like:likeFor(card);
+
+ // BẢO VỆ LIKE: Tuyệt đối không click nếu đã ở trạng thái đã Thích / Like
+ if(likeTarget&&isVisible(likeTarget)&&!isButtonAlreadyLiked(likeTarget)){
+  const likeText=txt(likeTarget);
+  if(!isAlreadyLiked(likeText)&&isLike(likeText)){
+   likeTarget.click();
+  }
+ }
+
+ // Đưa User này vào danh sách đã xong và xóa khỏi hàng chờ
+ processedUsers.add(p.key);
+ S.found.delete(p.key);
+ follow.classList.remove('ccf-hit');
+
+ status('Đã xử lý & xóa người dùng: '+p.name);
  render();
+ return true;
 }
+
 function scroller(){
  const r=dialogRoot();
- // Prefer the scrollable Facebook dialog; don't accidentally scroll the control panel.
  const els=[r,...r.querySelectorAll('div')].filter(e=>!e.closest('#ccf-panel')&&e.clientHeight>180&&e.scrollHeight>e.clientHeight+100);
  els.sort((a,b)=>{
   const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
@@ -186,51 +230,77 @@ function scroller(){
  });
  return els[0]||document.scrollingElement;
 }
-function visibleFollowCount(){
- const area=dialogRoot().getBoundingClientRect();
- let count=0;
- for(const el of followNodes()){
-  if(!isVisible(el)||el.closest('#ccf-panel'))continue;
-  const r=el.getBoundingClientRect();
-  if(r.top>=area.top+55&&r.bottom<=area.bottom-45&&r.top<innerHeight&&r.bottom>0)count++;
- }
- return count;
-}
+
 async function scan(){
  if(S.running)return;
  S.running=true;S.stop=false;
  let stuck=0;
  try{
-  for(let i=0;i<120&&!S.stop;i++){
+  while(!S.stop){
    collect();
    const el=scroller(),before=el.scrollTop;
-   const step=Math.max(110,Math.min(240,Math.round(el.clientHeight*.25)));
+   const step=Math.max(120,Math.min(260,Math.round(el.clientHeight*.28)));
    el.scrollBy({top:step,behavior:'instant'});
-   await nap(850);
+   await nap(500);
    collect();
-   S.steps=i+1;render();
-   stuck=el.scrollTop===before?stuck+1:0;
-   status('Đang tìm kiếm và tự cuộn: '+S.steps+'/120 | đã tìm '+S.found.size+' người.');
-   if(stuck>=5){status('Đã tới cuối vùng cuộn. Đã tìm '+S.found.size+' người.');break;}
+   S.steps++;render();
+
+   stuck=Math.abs(el.scrollTop-before)<5?stuck+1:0;
+   status('Đang quét: Lượt '+S.steps+' | Danh sách chờ: '+S.found.size+' người.');
+   if(stuck>=5){
+    status('Đã tới cuối bình luận. Còn '+S.found.size+' người chưa xử lý.');
+    break;
+   }
   }
-  if(S.stop)status('Đã dừng. Đã tìm '+S.found.size+' người.');
-  else if(S.steps>=120)status('Đạt 120 lượt cuộn. Có thể tìm kiếm tiếp.');
+  if(S.stop)status('Đã dừng tìm kiếm.');
  }catch(e){status('Lỗi: '+e.message);}
  finally{S.running=false;}
 }
+
+async function processAll(){
+ if(S.running){status('Đang có tiến trình khác chạy.');return;}
+ S.running=true;S.stop=false;
+ status('Bắt đầu xử lý danh sách...');
+ try{
+  let count=0;
+  while(S.found.size>0&&!S.stop){
+   const p=S.found.values().next().value;
+   if(!p)break;
+
+   const success=await act(p);
+   if(success)count++;
+
+   await randDelay(500,1100);
+  }
+  if(!S.stop)status('Đã xử lý xong toàn bộ danh sách ('+count+' người).');
+ }catch(e){
+  status('Lỗi xử lý: '+e.message);
+ }finally{
+  S.running=false;
+  render();
+ }
+}
+
+$('ccf-auto').onclick=processAll;
 $('ccf-review').onclick=()=>{
- let available=0,missing=0,processed=0;
+ let available=0,missing=0;
  for(const p of S.found.values()){
-  if(p.state==='done'||p.state==='partial'){processed++;continue;}
   if(isVisible(p.follow)&&isFollow(txt(p.follow))){p.state='ready';available++;}
   else{p.state='lost';missing++;}
  }
  render();
- status('Kiểm tra '+S.found.size+' mục: '+available+' còn nút Theo dõi, '+missing+' không còn hiển thị, '+processed+' đã thao tác. Không có Follow/Like tự động.');
+ status('Còn lại '+S.found.size+' người: '+available+' sẵn sàng, '+missing+' mất dấu. Đã xử lý tổng cộng: '+processedUsers.size);
 };
 $('ccf-scroll').onclick=scan;
-$('ccf-stop').onclick=()=>{S.stop=true;status('Đang dừng...')};
-$('ccf-clear').onclick=()=>{document.querySelectorAll('.ccf-hit').forEach(e=>e.classList.remove('ccf-hit'));S.found.clear();S.steps=0;render();status('Đã xóa danh sách.')};
+$('ccf-stop').onclick=()=>{S.stop=true;status('Đang yêu cầu dừng...')};
+$('ccf-clear').onclick=()=>{
+ document.querySelectorAll('.ccf-hit').forEach(e=>e.classList.remove('ccf-hit'));
+ S.found.clear();
+ processedUsers.clear();
+ S.steps=0;
+ render();
+ status('Đã xóa toàn bộ dữ liệu.');
+};
 $('ccf-hide').onclick=()=>{panel.hidden=true;show.hidden=false};
 show.onclick=()=>{panel.hidden=false;show.hidden=true};
 render();

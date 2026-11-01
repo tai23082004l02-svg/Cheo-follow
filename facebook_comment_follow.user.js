@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      1.5.0
+// @version      1.6.0
 // @description  Quét bình luận, tạo danh sách; chỉ Follow và Like khi người dùng nhấn từng mục.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
@@ -25,7 +25,7 @@ const css=document.createElement('style');
 css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
 (document.head||document.documentElement).append(css);
 const panel=document.createElement('div');panel.id='ccf-panel';
-panel.innerHTML='<b>Facebook Comment Follow v1.5</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Bỏ qua và cuộn tiếp</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
+panel.innerHTML='<b>Facebook Comment Follow v1.6</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Bỏ qua và cuộn tiếp</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
 const show=document.createElement('button');show.id='ccf-open';show.textContent='☰ Comment Follow';show.hidden=true;
 (document.body||document.documentElement).append(panel,show);
 const $=id=>panel.querySelector('#'+id);
@@ -80,22 +80,20 @@ function cardName(card,followNode){
  return match||'Không rõ tên';
 }
 function likeFor(card){
- // The Like action may be a bare thumbs-up SVG with no accessible label.
- const buttons=[...card.querySelectorAll('button,[role="button"],a,span')].filter(isVisible);
- const labeled=buttons.filter(x=>isLike(x.getAttribute('aria-label')||x.innerText||''));
- if(labeled.length===1)return labeled[0];
- const reply=buttons.find(x=>/^(Trả lời|Reply)$/i.test(txt(x)));
- if(!reply)return null;
- const rr=reply.getBoundingClientRect();
- const options=buttons.filter(x=>{
-  if(x===reply||x.contains(reply)||reply.contains(x))return false;
-  const r=x.getBoundingClientRect();
-  return r.width>14&&r.width<70&&r.height>14&&r.height<52&&
-    r.right<=rr.left+3&&rr.left-r.right<100&&Math.abs((r.top+r.bottom)/2-(rr.top+rr.bottom)/2)<20&&
-    !!x.querySelector('svg');
- });
- // Only trust an unambiguous icon to the left of "Trả lời".
- return options.length===1?options[0]:null;
+ // Facebook shows a thumbs-up SVG with accessible name "Thích".
+ const icons=[...card.querySelectorAll('svg[aria-label],svg[role="img"]')].filter(isVisible);
+ const likes=icons.filter(e=>isLike(e.getAttribute('aria-label')||e.querySelector('title')?.textContent||''));
+ if(likes.length!==1)return null;
+ const icon=likes[0];
+ let target=icon.closest('[role="button"],button,a');
+ if(!target){
+  let e=icon.parentElement;
+  for(let i=0;i<4&&e;i++,e=e.parentElement){
+   const r=e.getBoundingClientRect();
+   if(r.width>=15&&r.width<=90&&r.height>=15&&r.height<=55){target=e;break;}
+  }
+ }
+ return target&&isVisible(target)?target:null;
 }
 function collect(){
  let added=0;

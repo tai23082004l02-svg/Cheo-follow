@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker
 // @namespace    cheo-follow.local
-// @version      2.9.2
+// @version      3.0.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và đối chiếu người chưa theo dõi lại.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -118,40 +118,62 @@ function csv(){
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const isUnfollow=t=>/^(bỏ theo dõi|hủy theo dõi|unfollow)(\\s|$)/i.test(norm(t));
 function locateRow(profile){
- const matches=visible().filter(x=>x.id===profile.id);
- for(const m of matches){
-  let e=m.node;
-  for(let k=0;k<6&&e;k++,e=e.parentElement){
-   const txt=norm(e.innerText||'');
-   const links=e.querySelectorAll('a[href]').length;
-   const buttons=e.querySelectorAll('button,[role="button"]').length;
-   if(txt.includes(m.name)&&buttons>0&&links<=5&&txt.length<450)return e;
+ const match=visible().find(x=>x.id===profile.id);
+ if(!match)return null;
+ let e=match.node;
+ for(let k=0;k<9&&e;k++,e=e.parentElement){
+  const text=norm(e.innerText||'');
+  if(text.includes(match.name)&&e.querySelectorAll('button,[role="button"]').length>=1&&text.length<550){
+   const r=e.getBoundingClientRect();
+   if(r.width>180&&r.height>55)return e;
   }
  }
  return null;
 }
+function threeDots(row){
+ const buttons=[...row.querySelectorAll('button,[role="button"]')].filter(e=>!e.closest('#cf-panel')&&e.getBoundingClientRect().width>0);
+ const named=buttons.find(e=>/^(more|more options|tùy chọn|tùy chọn khác|…|⋯|\.\.\.)$/i.test(norm(e.getAttribute('aria-label')||e.getAttribute('title')||e.innerText)));
+ if(named)return named;
+ // Facebook sometimes has a graphical ellipsis without text/aria-label.
+ // Only accept a single compact icon button in the right-hand side of this row.
+ const rect=row.getBoundingClientRect();
+ const icons=buttons.filter(e=>{
+  const r=e.getBoundingClientRect();
+  return r.width>=20&&r.width<=70&&r.height>=20&&r.height<=70&&
+    r.left>rect.left+rect.width*.65&&
+    !norm(e.innerText||'') &&
+    !!e.querySelector('svg');
+ });
+ return icons.length===1?icons[0]:null;
+}
 async function unfollowVisible(profile){
  const row=locateRow(profile);
  if(!row)return false;
- const btns=[...row.querySelectorAll('button,[role="button"]')].filter(e=>!e.closest('#cf-panel'));
- const direct=btns.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
- if(direct){direct.click();await pause(400);return true;}
- // Chỉ mở menu tác vụ rõ ràng, tuyệt đối không tự đoán nút theo vị trí.
- const menu=btns.find(e=>/^(tùy chọn|tùy chọn khác|xem thêm|more|more options|actions|\\.\\.\\.|…)$|menu/i.test(norm(e.getAttribute('aria-label')||e.getAttribute('title')||e.innerText)));
+ const menu=threeDots(row);
  if(!menu)return false;
- menu.click();await pause(420);
- const opts=[...document.querySelectorAll('[role="menuitem"],[role="menu"] [role="button"],[role="menu"] button')];
- const choice=opts.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
- if(!choice){menu.click();return false;}
- choice.click();await pause(500);
- // Facebook đôi khi hỏi xác nhận lần hai.
- const dialogs=[...document.querySelectorAll('[role="dialog"]')];
+ menu.click();
+ await pause(550);
+ // The visible Facebook popup is often a portal outside the card,
+ // with a role=menuitem or nested role=button.
+ const candidates=[...document.querySelectorAll('[role="menuitem"],[role="menu"] [role="button"],[role="dialog"] [role="button"],[role="menu"] button')];
+ let choices=candidates.filter(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
+ if(!choices.length){
+  const leaf=[...document.querySelectorAll('span,div')].filter(e=>
+    e.children.length===0&&isUnfollow(e.textContent||'')&&e.getBoundingClientRect().width>0&&!e.closest('#cf-panel'));
+  choices=leaf.map(e=>e.closest('[role="menuitem"],[role="button"],button')||e.parentElement).filter(Boolean);
+ }
+ choices=[...new Set(choices)].filter(e=>e.getBoundingClientRect().width>0);
+ if(choices.length!==1){menu.click();return false;}
+ choices[0].click();
+ await pause(550);
+ const dialogs=[...document.querySelectorAll('[role="dialog"]')].filter(e=>e.getBoundingClientRect().width>0);
  if(dialogs.length){
   const actions=[...dialogs.at(-1).querySelectorAll('button,[role="button"]')];
   const confirmBtn=actions.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
-  if(!confirmBtn){status('Facebook hiện hộp thoại không nhận diện được. Đã dừng để tránh gỡ nhầm.');state.stop=true;return false;}
-  confirmBtn.click();await pause(350);
+  if(!confirmBtn){status('Có hộp thoại chưa nhận diện được. Đã dừng để tránh thao tác nhầm.');state.stop=true;return false;}
+  confirmBtn.click();await pause(450);
  }
+ // A click is not proof of success: this result must be verified by rescan.
  return true;
 }
 async function reviewBatch(){
@@ -175,7 +197,7 @@ async function reviewBatch(){
     const ok=await unfollowVisible(x);
     if(ok){db.following[x.id].unfollowedAt=Date.now();done++;save();}
     else skipped++;
-    status('Đã thử hủy '+done+' | Không thao tác được '+skipped+' | Nhấn Dừng để ngắt.');
+    status('Đã nhấn bỏ theo dõi '+done+' | Không thao tác được '+skipped+' | Nhấn Dừng để ngắt.');
     await pause(700);
    }
    const el=scroller();if(!el)break;
@@ -183,7 +205,7 @@ async function reviewBatch(){
    await pause(900);steps++;
    if(el.scrollTop===old)break;
   }
-  status('Kết thúc: '+done+' hồ sơ đã thao tác; '+skipped+' hồ sơ không tìm được nút phù hợp. Hãy kiểm tra lại trên Facebook.');
+  status('Kết thúc: '+done+' hồ sơ đã nhấn bỏ theo dõi (cần quét lại xác minh); '+skipped+' hồ sơ không tìm được nút phù hợp. Hãy kiểm tra lại trên Facebook.');
  }catch(e){status('Đã dừng vì lỗi: '+e.message);}
  finally{state.running=false;render();}
 }

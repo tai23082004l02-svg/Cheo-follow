@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker
 // @namespace    cheo-follow.local
-// @version      3.0.0
+// @version      3.1.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và đối chiếu người chưa theo dõi lại.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -152,7 +152,7 @@ async function unfollowVisible(profile){
  const menu=threeDots(row);
  if(!menu)return false;
  menu.click();
- await pause(550);
+ await pause(400);
  // The visible Facebook popup is often a portal outside the card,
  // with a role=menuitem or nested role=button.
  const candidates=[...document.querySelectorAll('[role="menuitem"],[role="menu"] [role="button"],[role="dialog"] [role="button"],[role="menu"] button')];
@@ -165,13 +165,13 @@ async function unfollowVisible(profile){
  choices=[...new Set(choices)].filter(e=>e.getBoundingClientRect().width>0);
  if(choices.length!==1){menu.click();return false;}
  choices[0].click();
- await pause(550);
+ await pause(400);
  const dialogs=[...document.querySelectorAll('[role="dialog"]')].filter(e=>e.getBoundingClientRect().width>0);
  if(dialogs.length){
   const actions=[...dialogs.at(-1).querySelectorAll('button,[role="button"]')];
   const confirmBtn=actions.find(e=>isUnfollow(e.innerText||e.getAttribute('aria-label')||''));
   if(!confirmBtn){status('Có hộp thoại chưa nhận diện được. Đã dừng để tránh thao tác nhầm.');state.stop=true;return false;}
-  confirmBtn.click();await pause(450);
+  confirmBtn.click();await pause(350);
  }
  // A click is not proof of success: this result must be verified by rescan.
  return true;
@@ -198,11 +198,11 @@ async function reviewBatch(){
     if(ok){db.following[x.id].unfollowedAt=Date.now();done++;save();}
     else skipped++;
     status('Đã nhấn bỏ theo dõi '+done+' | Không thao tác được '+skipped+' | Nhấn Dừng để ngắt.');
-    await pause(700);
+    await pause(500);
    }
    const el=scroller();if(!el)break;
    const old=el.scrollTop;el.scrollBy({top:Math.max(400,Math.round(el.clientHeight*.75)),behavior:'instant'});
-   await pause(900);steps++;
+   await pause(700);steps++;
    if(el.scrollTop===old)break;
   }
   status('Kết thúc: '+done+' hồ sơ đã nhấn bỏ theo dõi (cần quét lại xác minh); '+skipped+' hồ sơ không tìm được nút phù hợp. Hãy kiểm tra lại trên Facebook.');

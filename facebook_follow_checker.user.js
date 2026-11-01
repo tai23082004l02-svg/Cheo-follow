@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker
 // @namespace    cheo-follow.local
-// @version      2.9.0
+// @version      2.9.1
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và đối chiếu người chưa theo dõi lại.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -192,7 +192,7 @@ style.textContent='#cf-toggle{position:fixed!important;top:38%!important;left:0!
 (document.head||document.documentElement).append(style);
 const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Mở Follow Checker';(document.body||document.documentElement).append(toggle);
 const panel=document.createElement('div');panel.id='cf-panel';panel.hidden=false;
-panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review" style="background:#dc2626;color:white">Hủy follow người không theo dõi lại</button><small>Chỉ chạy khi hai danh sách được quét đủ và mới trong 60 phút. Có thể dừng, kết quả cần kiểm chứng.</small>';
+panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review" style="background:#dc2626;color:white">Hủy follow người không theo dõi lại</button>';
 (document.body||document.documentElement).append(panel);
 toggle.hidden=true;
 try { GM_registerMenuCommand('Mở Follow Checker',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }

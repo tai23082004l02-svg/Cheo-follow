@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      1.7.0
+// @version      1.8.0
 // @description  Quét bình luận, tạo danh sách; chỉ Follow và Like khi người dùng nhấn từng mục.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
@@ -25,7 +25,7 @@ const css=document.createElement('style');
 css.textContent='#ccf-panel{position:fixed!important;top:110px!important;right:12px!important;width:340px!important;max-height:80vh!important;overflow:auto!important;background:#fff!important;color:#172033!important;border:2px solid #2563eb!important;border-radius:12px!important;padding:12px!important;z-index:2147483647!important;box-shadow:0 8px 30px #0005!important;font:13px Arial!important}#ccf-panel button{margin:3px!important;padding:7px 9px!important;border:1px solid #bdd0ff!important;border-radius:7px!important;background:#e8efff!important;color:#13233a!important;cursor:pointer!important}#ccf-panel button:disabled{opacity:.5!important}#ccf-panel[hidden],#ccf-open[hidden]{display:none!important}#ccf-open{position:fixed!important;right:0!important;top:35%!important;z-index:2147483647!important;background:#2563eb!important;color:white!important;border:0!important;padding:12px!important;border-radius:8px 0 0 8px!important}.ccf-person{padding:7px 0;border-bottom:1px solid #ddd}.ccf-hit{outline:2px solid #10b981!important;outline-offset:2px!important}';
 (document.head||document.documentElement).append(css);
 const panel=document.createElement('div');panel.id='ccf-panel';
-panel.innerHTML='<b>Facebook Comment Follow v1.7</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Bỏ qua và cuộn tiếp</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
+panel.innerHTML='<b>Facebook Comment Follow v1.8</b><button id="ccf-hide">Ẩn</button><p id="ccf-count">Tìm thấy 0 người</p><button id="ccf-find">Tìm trên màn hình</button><button id="ccf-scroll">Tự cuộn + lập danh sách</button><button id="ccf-stop">■ Dừng</button><button id="ccf-skip">Cuộn tiếp ↓</button><button id="ccf-clear">Xóa danh sách</button><p id="ccf-status">Mở bình luận bài viết rồi bắt đầu quét.</p><div id="ccf-people" style="max-height:38vh;overflow:auto"></div><small>Chỉ bấm Follow + Like khi bạn chọn từng người. Nếu Facebook không nhận diện nút Thích, bạn sẽ cần Like thủ công.</small>';
 const show=document.createElement('button');show.id='ccf-open';show.textContent='☰ Comment Follow';show.hidden=true;
 (document.body||document.documentElement).append(panel,show);
 const $=id=>panel.querySelector('#'+id);
@@ -224,7 +224,7 @@ async function scan(){
 $('ccf-find').onclick=()=>status('Tìm thêm '+collect()+' người trên màn hình.');
 $('ccf-scroll').onclick=scan;
 $('ccf-stop').onclick=()=>{S.stop=true;status('Đang dừng...')};
-$('ccf-skip').onclick=()=>{S.skip=true;status('Đã bỏ qua các nút Follow còn lại ở vị trí hiện tại.');};
+$('ccf-skip').onclick=()=>{S.skip=true;status('Đã yêu cầu cuộn tiếp; các mục đã tìm vẫn được giữ lại.');};
 $('ccf-clear').onclick=()=>{document.querySelectorAll('.ccf-hit').forEach(e=>e.classList.remove('ccf-hit'));S.found.clear();S.steps=0;render();status('Đã xóa danh sách.')};
 $('ccf-hide').onclick=()=>{panel.hidden=true;show.hidden=false};
 show.onclick=()=>{panel.hidden=false;show.hidden=true};

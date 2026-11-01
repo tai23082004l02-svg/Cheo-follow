@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker 24H
 // @namespace    cheo-follow.local
-// @version      2.5.0
+// @version      2.6.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và kiểm tra quá hạn 24 giờ.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -59,32 +59,42 @@ function collect(mode){
 }
 const status=t=>{const e=document.querySelector('#cf-status');if(e)e.textContent=t;};
 function scroller(){
+ // Prefer the actual page scroller. Do not scroll arbitrary Facebook sidebar widgets.
  const root=main();
- const all=[document.scrollingElement,root,...root.querySelectorAll('div')].filter(x=>x&&x.clientHeight>170&&x.scrollHeight>x.clientHeight+150);
- all.sort((a,b)=>(b.clientHeight*b.clientWidth)-(a.clientHeight*a.clientWidth));
- return all.find(x=>x!==document.scrollingElement)||document.scrollingElement;
+ const candidates=[document.scrollingElement,root,...root.querySelectorAll('[role="main"] [style*="overflow"], [role="main"] [data-pagelet]')].filter(Boolean);
+ const scrollable=candidates.filter(el=>el.scrollHeight>el.clientHeight+100 && el.clientHeight>200);
+ return scrollable.sort((a,b)=>b.clientHeight-a.clientHeight)[0]||document.scrollingElement;
 }
 async function scan(mode){
  if(state.running)return;
- if(!confirm('Bạn đã mở đúng danh sách '+(mode==='following'?'Đang theo dõi':'Người theo dõi')+' trên Facebook chưa?'))return;
+ if(!confirm('Bạn đã mở đúng tab '+(mode==='following'?'Đang theo dõi':'Người theo dõi')+' trên Facebook chưa?'))return;
  state.running=true;state.stop=false;
- let steps=0,stable=0,old='',fresh=0;
+ let steps=0,idle=0,fresh=0,completed=false,reason='';
  try{
-  for(;steps<120&&!state.stop;steps++){
-   fresh+=collect(mode);
-   const el=scroller();if(!el)break;
-   const sig=[el.scrollTop,el.scrollHeight,Object.keys(db[mode]).length].join(':');
-   stable=sig===old?stable+1:0;old=sig;
-   if(stable>=6)break;
-   status('Đang cuộn: '+(steps+1)+'/120 | mới lưu '+fresh+' hồ sơ. Có thể nhấn Dừng.');
-   el.scrollBy({top:Math.max(350,el.clientHeight*.75),behavior:'instant'});
-   await nap(1300);
+  const limit=40;
+  for(;steps<limit&&!state.stop;steps++){
+   const newly=collect(mode);fresh+=newly;
+   idle=newly===0?idle+1:0;
+   const el=scroller();if(!el){reason='Không tìm thấy vùng cuộn.';break;}
+   const bottom=el.scrollTop+el.clientHeight>=el.scrollHeight-90;
+   if(idle>=4){
+    completed=bottom;
+    reason=bottom?'Đã tới cuối và không có tài khoản mới.':'Không có hồ sơ mới sau 4 lượt; có thể dữ liệu chưa tải đủ.';
+    break;
+   }
+   status('Đang quét: lượt '+(steps+1)+'/'+limit+' | mới lưu '+fresh+' hồ sơ | không có người mới '+idle+'/4. Có thể nhấn Dừng.');
+   const before=el.scrollTop;
+   el.scrollBy({top:Math.max(350,Math.round(el.clientHeight*0.75)),behavior:'instant'});
+   await nap(1200);
+   if(el.scrollTop===before&&bottom&&idle>=2){completed=true;reason='Đã tới cuối danh sách.';break;}
   }
-  collect(mode);
-  db.scans[mode]={at:Date.now(),completed:!state.stop&&stable>=6,count:Object.keys(db[mode]).length};
+  fresh+=collect(mode);
+  if(state.stop)reason='Bạn đã dừng quét.';
+  if(steps>=40)reason='Đã chạm giới hạn 40 lượt cuộn.';
+  db.scans[mode]={at:Date.now(),completed:completed&&!state.stop,count:Object.keys(db[mode]).length};
   save();
-  status('Kết thúc quét '+mode+'. Đã lưu '+Object.keys(db[mode]).length+' hồ sơ. '+(db.scans[mode].completed?'Có vẻ đã đến cuối danh sách.':'Chưa xác nhận quét đủ.'));
- }catch(e){status('Lỗi: '+e.message);}
+  status('Kết thúc: lưu '+Object.keys(db[mode]).length+' hồ sơ ('+fresh+' mới). '+(reason||'Chưa xác nhận quét đủ.'));
+ }catch(e){status('Lỗi quét: '+e.message);}
  finally{state.running=false;render();}
 }
 function pending(){

@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Facebook Comment Follow
 // @namespace    cheo-follow.comment
-// @version      2.6.0
-// @description  Quét bình luận, tự động lọc trùng người dùng và loại trừ triệt để nút Like đã bấm để tránh bị gỡ Like/Follow.
+// @version      2.7.0
+// @description  Quét bình luận Facebook, tìm người chưa theo dõi và chỉ Follow khi bạn chọn; không Like.
 // @match        *://facebook.com/*
 // @match        *://www.facebook.com/*
 // @match        *://web.facebook.com/*
@@ -156,7 +156,7 @@ function collect(){
   // Nếu người này đã có trong danh sách chờ -> bỏ qua bình luận thứ 2, 3... của họ
   if(S.found.has(userKey))continue;
 
-  const item={id:++S.seq,key:userKey,name,follow,like:likeFor(card),state:'ready'};
+  const item={id:++S.seq,key:userKey,name,follow,state:'ready'};
   S.found.set(userKey,item);
   follow.classList.add('ccf-hit');
   added++;
@@ -171,7 +171,7 @@ function render(){
  for(const p of S.found.values()){
   const row=document.createElement('div');row.className='ccf-person';
   const title=document.createElement('span');title.textContent=p.name+' — '+(p.state==='lost'?'Không còn trên màn hình':'Chờ xử lý');
-  const btn=document.createElement('button');btn.textContent='Follow + Like';
+  const btn=document.createElement('button');btn.textContent='Follow';
   btn.onclick=()=>act(p);
   row.append(title,document.createElement('br'),btn);root.append(row);
  }
@@ -199,17 +199,6 @@ async function act(p){
   follow.click();
  }
  await nap(180);
-
- const card=nearestComment(follow);
- const likeTarget=p.like&&isVisible(p.like)?p.like:likeFor(card);
-
- // BẢO VỆ LIKE: Tuyệt đối không click nếu đã ở trạng thái đã Thích / Like
- if(likeTarget&&isVisible(likeTarget)&&!isButtonAlreadyLiked(likeTarget)){
-  const likeText=txt(likeTarget);
-  if(!isAlreadyLiked(likeText)&&isLike(likeText)){
-   likeTarget.click();
-  }
- }
 
  // Đưa User này vào danh sách đã xong và xóa khỏi hàng chờ
  processedUsers.add(p.key);

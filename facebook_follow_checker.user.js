@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Facebook Follow Checker 24H
 // @namespace    cheo-follow.local
-// @version      2.4.0
+// @version      2.5.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và kiểm tra quá hạn 24 giờ.
 // @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
@@ -124,9 +124,9 @@ async function reviewBatch(){
 const style=document.createElement('style');
 style.textContent='#cf-toggle{position:fixed!important;top:38%!important;left:0!important;right:auto!important;bottom:auto!important;display:block;background:#2563eb;color:white;border:0;border-radius:25px;padding:10px 15px;z-index:2147483647;cursor:pointer}#cf-panel{position:fixed!important;top:16%!important;left:12px!important;right:auto!important;bottom:auto!important;width:340px;max-height:78vh;overflow:auto;box-sizing:border-box;background:#fff;color:#182433;border:2px solid #2563eb;border-radius:12px;padding:12px;z-index:2147483647;font:13px/1.5 Arial;box-shadow:0 10px 30px #0004}#cf-panel[hidden],#cf-toggle[hidden]{display:none!important}#cf-panel button{padding:6px 9px;margin:3px;background:#e5edff;color:#182433;border:1px solid #a9c3fc;border-radius:6px;cursor:pointer}#cf-panel a{color:#155ed6}#cf-status{white-space:pre-wrap;margin:10px 0}#cf-list{max-height:180px;overflow:auto}';
 (document.head||document.documentElement).append(style);
-const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Follow 24H';(document.body||document.documentElement).append(toggle);
+const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textContent='☰ Mở Follow 24H';(document.body||document.documentElement).append(toggle);
 const panel=document.createElement('div');panel.id='cf-panel';panel.hidden=false;
-panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close">✕</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><button id="cf-review">Kiểm tra tối đa 10 người quá hạn</button><b>Chưa thấy follow lại sau 24h:</b><div id="cf-list"></div><small>Thời gian 24h tính từ lúc tool ghi nhận lần đầu. Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
+panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close" title="Ẩn bảng điều khiển">− Ẩn</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><div style="margin:9px 0;padding:8px;border:1px solid #d1d5db;border-radius:8px"><b>Quản lý dữ liệu</b><div><button id="cf-clear-following">Xóa Đang theo dõi</button><button id="cf-clear-followers">Xóa Người theo dõi</button><button id="cf-clear-all">Xóa tất cả</button></div></div><button id="cf-review">Kiểm tra tối đa 10 người quá hạn</button><b>Chưa thấy follow lại sau 24h:</b><div id="cf-list"></div><small>Thời gian 24h tính từ lúc tool ghi nhận lần đầu. Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
 (document.body||document.documentElement).append(panel);
 toggle.hidden=true;
 try { GM_registerMenuCommand('Mở Follow Checker 24H',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }
@@ -136,6 +136,18 @@ panel.querySelector('#cf-following').onclick=()=>scan('following');
 panel.querySelector('#cf-followers').onclick=()=>scan('followers');
 panel.querySelector('#cf-stop').onclick=()=>{state.stop=true;status('Đang dừng...');};
 panel.querySelector('#cf-export').onclick=csv;
+function clearList(which){
+ if(state.running){status('Hãy dừng quét trước khi xóa dữ liệu.');return;}
+ const label=which==='following'?'danh sách Đang theo dõi':which==='followers'?'danh sách Người theo dõi':'TOÀN BỘ dữ liệu';
+ const count=which==='all'?Object.keys(db.following).length+Object.keys(db.followers).length:Object.keys(db[which]).length;
+ if(!confirm('Bạn chắc chắn muốn xóa '+label+' ('+count+' hồ sơ)? Thao tác này không thể hoàn tác.'))return;
+ if(which==='all'){db.following={};db.followers={};db.scans={};}
+ else {db[which]={};delete db.scans[which];}
+ save();render();status('Đã xóa '+label+'.');
+}
+panel.querySelector('#cf-clear-following').onclick=()=>clearList('following');
+panel.querySelector('#cf-clear-followers').onclick=()=>clearList('followers');
+panel.querySelector('#cf-clear-all').onclick=()=>clearList('all');
 panel.querySelector('#cf-review').onclick=reviewBatch;
 render();
 console.info('[Follow Checker] floating controls mounted');

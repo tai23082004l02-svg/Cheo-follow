@@ -1,20 +1,23 @@
 // ==UserScript==
 // @name         Facebook Follow Checker 24H
 // @namespace    cheo-follow.local
-// @version      2.3.0
+// @version      2.4.0
 // @description  Quản lý danh sách following/followers, tự cuộn, đối chiếu và kiểm tra quá hạn 24 giờ.
+// @match        https://facebook.com/*
 // @match        https://www.facebook.com/*
 // @match        https://web.facebook.com/*
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @run-at       document-idle
+// @updateURL    https://raw.githubusercontent.com/tai23082004l02-svg/Cheo-follow/main/facebook_follow_checker.user.js
+// @downloadURL  https://raw.githubusercontent.com/tai23082004l02-svg/Cheo-follow/main/facebook_follow_checker.user.js
 // ==/UserScript==
 (function(){
 'use strict';
 if(window.__followChecker21)return;
 window.__followChecker21=true;
-console.info('[Follow Checker] script loaded v2.3');
+console.info('[Follow Checker] script loaded v2.4');
 const KEY='cheo_follow_v21', DAY=86400000, nap=ms=>new Promise(r=>setTimeout(r,ms));
 const storeRead=(key,fallback)=>{try{return typeof GM_getValue==='function'?GM_getValue(key,fallback):localStorage.getItem(key)||fallback;}catch{return localStorage.getItem(key)||fallback;}};
 const storeWrite=(key,val)=>{try{if(typeof GM_setValue==='function')return GM_setValue(key,val);}catch(e){console.warn(e)}localStorage.setItem(key,val);};
@@ -125,7 +128,7 @@ const toggle=document.createElement('button');toggle.id='cf-toggle';toggle.textC
 const panel=document.createElement('div');panel.id='cf-panel';panel.hidden=false;
 panel.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center"><b>Facebook Follow Checker 24H</b><button id="cf-close">✕</button></div><p id="cf-stats"></p><button id="cf-following">↻ Cuộn + lưu Đang theo dõi</button><button id="cf-followers">↻ Cuộn + lưu Người theo dõi</button><button id="cf-stop">■ Dừng</button><p id="cf-status">Chọn đúng tab danh sách Facebook trước khi cuộn.</p><button id="cf-export">Xuất CSV</button><button id="cf-review">Kiểm tra tối đa 10 người quá hạn</button><b>Chưa thấy follow lại sau 24h:</b><div id="cf-list"></div><small>Thời gian 24h tính từ lúc tool ghi nhận lần đầu. Quét chỉ thu thập dữ liệu hiển thị, có thể thiếu. Không tự bỏ theo dõi để tránh gỡ nhầm.</small>';
 (document.body||document.documentElement).append(panel);
-toggle.hidden=false;
+toggle.hidden=true;
 try { GM_registerMenuCommand('Mở Follow Checker 24H',()=>{panel.hidden=false;toggle.hidden=true;render();}); } catch(e) { console.warn('Menu command unavailable',e); }
 toggle.onclick=()=>{toggle.hidden=true;panel.hidden=false;render();};
 panel.querySelector('#cf-close').onclick=()=>{panel.hidden=true;toggle.hidden=false;};
